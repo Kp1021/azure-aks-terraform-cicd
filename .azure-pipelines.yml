@@ -1,0 +1,73 @@
+# Azure DevOps YAML pipeline for building and deploying a Flask app to AKS via Terraform
+
+trigger:
+  branches:
+    include:
+      - main
+
+# Variables can be overridden in the pipeline UI or variable groups
+variables:
+  # Connection to Azure Resource Manager set up in the pipeline environment
+  azureSubscription: "azureServiceConnection"
+  imageName: "aks-flask-app"
+
+stages:
+  - stage: Build
+    displayName: "Build and Test"
+    jobs:
+      - job: Build
+        displayName: "Build Docker image"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.11"
+              architecture: "x64"
+          - script: |
+              echo "Installing dependencies and building Docker image"
+              python -m pip install -r app/requirements.txt
+              docker build -t $(imageName):$(Build.BuildId) -f app/Dockerfile app
+            displayName: "Build container"
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathtoPublish: "$(System.DefaultWorkingDirectory)"
+              artifactName: "source-code"
+
+  - stage: DeployInfrastructure
+    displayName: "Provision AKS with Terraform"
+    jobs:
+      - job: TerraformInitPlan
+        displayName: "Terraform Init & Plan"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - script: |
+              cd infra
+              terraform init
+              terraform plan -out=tfplan
+            displayName: "Terraform init and plan"
+      - job: TerraformApply
+        displayName: "Terraform Apply"
+        dependsOn: TerraformInitPlan
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - script: |
+              cd infra
+              terraform init
+              terraform apply -auto-approve
+            displayName: "Terraform apply"
+
+  - stage: DeployApp
+    displayName: "Deploy Application"
+    dependsOn: DeployInfrastructure
+    jobs:
+      - job: Deploy
+        displayName: "Deploy to AKS"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - script: |
+              echo "Deploy container to AKS using kubectl or Helm"
+            displayName: "Deployment placeholder"
